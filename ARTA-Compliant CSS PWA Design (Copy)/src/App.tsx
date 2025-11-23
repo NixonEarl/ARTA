@@ -3,7 +3,9 @@ import { LandingPage } from './components/LandingPage';
 import { SurveyForm } from './components/SurveyForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { KioskLandingScreen } from './components/KioskLandingScreen';
-//test
+import { AuthProvider } from './context/AuthContext';
+import './firebase';
+
 // Types
 export interface SurveyQuestion {
   id: string;
@@ -211,43 +213,45 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen">
-      {view === 'landing' && !kioskMode && (
-        <LandingPage 
-          onTakeSurvey={() => setView('survey')} 
-          onAdminLogin={() => setView('admin')}
-          responses={responses}
-          kioskMode={kioskMode}
-        />
-      )}
-      {view === 'landing' && kioskMode && (
-        <KioskLandingScreen 
-          onStartSurvey={() => setView('survey')}
-        />
-      )}
-      {view === 'survey' && (
-        <SurveyForm 
-          onBackToLanding={() => setView('landing')}
-          questions={questions}
-          onSubmitResponse={handleSubmitResponse}
-          kioskMode={kioskMode}
-        />
-      )}
-      {view === 'admin' && (
-        <AdminDashboard 
-          responses={responses}
-          questions={questions}
-          users={users}
-          onAddQuestion={handleAddQuestion}
-          onUpdateQuestion={handleUpdateQuestion}
-          onDeleteQuestion={handleDeleteQuestion}
-          onAddUser={handleAddUser}
-          onUpdateUser={handleUpdateUser}
-          onDeleteUser={handleDeleteUser}
-          onReorderQuestions={handleReorderQuestions}
-          onLogout={() => setView('landing')}
-        />
-      )}
-    </div>
+    <AuthProvider>
+      <div className="min-h-screen">
+        {view === 'landing' && !kioskMode && (
+          <LandingPage 
+            onTakeSurvey={() => setView('survey')} 
+            onAdminLogin={() => setView('admin')}
+            responses={responses}
+            kioskMode={kioskMode}
+          />
+        )}
+        {view === 'landing' && kioskMode && (
+          <KioskLandingScreen 
+            onStartSurvey={() => setView('survey')}
+          />
+        )}
+        {view === 'survey' && (
+          <SurveyForm 
+            onBackToLanding={() => setView('landing')}
+            questions={questions}
+            onSubmitResponse={handleSubmitResponse}
+            kioskMode={kioskMode}
+          />
+        )}
+        {view === 'admin' && (
+          <AdminDashboard 
+            responses={responses}
+            questions={questions}
+            users={users}
+            onAddQuestion={handleAddQuestion}
+            onUpdateQuestion={handleUpdateQuestion}
+            onDeleteQuestion={handleDeleteQuestion}
+            onAddUser={handleAddUser}
+            onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
+            onReorderQuestions={handleReorderQuestions}
+            onLogout={() => setView('landing')}
+          />
+        )}
+      </div>
+    </AuthProvider>
   );
 }
