@@ -133,6 +133,28 @@ export function AdminDashboard({
   const [saveOrderConfirmOpen, setSaveOrderConfirmOpen] = useState(false);
   const [unsavedChangesWarningOpen, setUnsavedChangesWarningOpen] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
+  
+  // Live update notification state
+  const [lastResponseCount, setLastResponseCount] = useState(responses.length);
+  const [newResponseNotification, setNewResponseNotification] = useState(false);
+  const [highlightCards, setHighlightCards] = useState(false);
+
+  // Detect when new responses arrive and show notification
+  useEffect(() => {
+    if (responses.length > lastResponseCount) {
+      setNewResponseNotification(true);
+      setHighlightCards(true);
+      // Auto-dismiss notification after 5 seconds
+      const timer = setTimeout(() => setNewResponseNotification(false), 5000);
+      // Stop highlighting after 2 seconds
+      const highlightTimer = setTimeout(() => setHighlightCards(false), 2000);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(highlightTimer);
+      };
+    }
+    setLastResponseCount(responses.length);
+  }, [responses.length, lastResponseCount]);
 
   // Initialize sorted questions
   useEffect(() => {
@@ -928,7 +950,7 @@ export function AdminDashboard({
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <header className="bg-white border-b border-border shadow-sm sticky top-0 z-20 flex-shrink-0">
           <div className="flex items-center justify-between p-4 gap-2 md:gap-4">
-            <div className="flex items-center gap-2 md:gap-4 min-w-0">
+            <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -937,8 +959,17 @@ export function AdminDashboard({
               >
                 {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </Button>
-              <h2 className="text-primary hidden xl:block truncate">ARTA Customer Satisfaction Survey Dashboard</h2>
-              <h2 className="text-primary hidden md:block xl:hidden truncate">ARTA CSS Dashboard</h2>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-primary hidden xl:block truncate">ARTA Customer Satisfaction Survey Dashboard</h2>
+                <h2 className="text-primary hidden md:block xl:hidden truncate">ARTA CSS Dashboard</h2>
+              </div>
+              {/* Live Status Indicator */}
+              <div className="flex items-center gap-2 flex-shrink-0 ml-auto md:ml-0">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 border border-green-200">
+                  <div className={`w-2 h-2 rounded-full ${newResponseNotification ? 'bg-green-600 animate-pulse' : 'bg-green-500'}`}></div>
+                  <span className="text-xs font-medium text-green-700 hidden sm:inline">Live</span>
+                </div>
+              </div>
             </div>
 
             {/* Search Bar - Only show in Raw Responses */}
@@ -1028,18 +1059,26 @@ export function AdminDashboard({
                 <p className="text-muted-foreground">Welcome to the ARTA CSS Admin Portal</p>
               </div>
 
+              {/* Live Update Notification */}
+              {newResponseNotification && (
+                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-pulse">
+                  <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium text-green-800">🔴 Live: New response(s) received! Dashboard updating...</span>
+                </div>
+              )}
+
               {/* Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="shadow-md border-border">
+                <Card className={`shadow-md border-border transition-all duration-500 ${highlightCards ? 'ring-2 ring-green-400 shadow-lg shadow-green-200' : ''}`}>
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <p className="text-sm text-muted-foreground mb-1">Total Responses</p>
-                        <p className="text-3xl text-primary mb-1">{totalResponses}</p>
+                        <p className={`text-3xl mb-1 transition-all ${highlightCards ? 'text-green-600 font-bold' : 'text-primary'}`}>{totalResponses}</p>
                         <p className="text-xs text-muted-foreground">{recentResponses.length} in last 30 days</p>
                       </div>
-                      <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-6 h-6 text-primary" />
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${highlightCards ? 'bg-green-100 scale-110' : 'bg-primary/10'}`}>
+                        <FileText className={`w-6 h-6 ${highlightCards ? 'text-green-600' : 'text-primary'}`} />
                       </div>
                     </div>
                   </CardContent>
