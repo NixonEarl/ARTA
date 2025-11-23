@@ -18,6 +18,8 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { DraggableQuestionItem } from './DraggableQuestionItem';
 import { useAuth } from '../context/AuthContext';
+import { addUserToFirebase, getAllUsers, subscribeToUsers, updateUserProfile, deleteUserProfile, AdminUser } from '../services/firebaseUserService';
+import { canManageUsers, canManageQuestions, canViewResponses, canConfigureSettings } from '../services/permissionService';
 
 interface AdminDashboardProps {
   responses: SurveyResponse[];
@@ -100,13 +102,17 @@ export function AdminDashboard({
   const [actionSuccessMessage, setActionSuccessMessage] = useState('');
   const [actionErrorOpen, setActionErrorOpen] = useState(false);
   const [actionErrorMessage, setActionErrorMessage] = useState('');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<SurveyQuestion | null>(null);
   const [pendingUserData, setPendingUserData] = useState<any>(null);
   const [pendingUserEdit, setPendingUserEdit] = useState<any>(null);
+  const [firebaseUsers, setFirebaseUsers] = useState<AdminUser[]>([]);
+  const [firebaseUsersLoading, setFirebaseUsersLoading] = useState(true);
+  const [firebaseUsersError, setFirebaseUsersError] = useState<string | null>(null);
 
   // Form states
   const [newUserForm, setNewUserForm] = useState({ name: '', email: '', role: 'Staff', password: '' });
+  const [editUserForm, setEditUserForm] = useState({ name: '', role: 'Staff', status: 'Active' });
   const [newQuestionForm, setNewQuestionForm] = useState({ 
     id: '', 
     text: '', 
@@ -143,6 +149,46 @@ export function AdminDashboard({
       setKioskOrientation(savedOrientation);
     }
   }, []);
+
+  // Load Firebase users on mount and keep subscription active
+  useEffect(() => {
+    setFirebaseUsersLoading(true);
+    setFirebaseUsersError(null);
+
+    const unsubscribe = subscribeToUsers(
+      (users) => {
+        setFirebaseUsers(users);
+        setFirebaseUsersLoading(false);
+        setFirebaseUsersError(null);
+      },
+      (error) => {
+        console.error('Failed to load users:', error);
+        setFirebaseUsersLoading(false);
+        
+        // Check if it's a permission denied error
+        if (error?.code === 'permission-denied') {
+          setFirebaseUsersError(
+            'Permission denied. Check Firestore security rules. Users collection must be readable by authenticated users.'
+          );
+        } else {
+          setFirebaseUsersError(error?.message || 'Failed to load users from Firestore');
+        }
+      }
+    );
+
+    return () => unsubscribe(); // Cleanup subscription
+  }, []);
+
+  // Populate edit form when user is selected
+  useEffect(() => {
+    if (selectedUser && editUserOpen) {
+      setEditUserForm({
+        name: selectedUser.name,
+        role: selectedUser.role,
+        status: selectedUser.status
+      });
+    }
+  }, [selectedUser, editUserOpen]);
 
   const handleKioskModeToggle = (checked: boolean) => {
     if (checked) {
@@ -317,54 +363,70 @@ export function AdminDashboard({
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newUserForm.password) {
+      setActionErrorMessage('Password is required');
+      setActionErrorOpen(true);
+      return;
+    }
     setPendingUserData({
       name: newUserForm.name,
       email: newUserForm.email,
       role: newUserForm.role,
+      password: newUserForm.password,
       status: 'Active'
     });
     setAddUserOpen(false);
     setAddUserConfirmOpen(true);
   };
 
-  const confirmAddUser = () => {
+  const confirmAddUser = async () => {
     if (pendingUserData) {
-      onAddUser(pendingUserData);
-      setNewUserForm({ name: '', email: '', role: 'Staff', password: '' });
-      setPendingUserData(null);
-      setAddUserConfirmOpen(false);
-      setActionSuccessMessage('User added successfully!');
-      setActionSuccessOpen(true);
+      try {
+        await addUserToFirebase(
+          pendingUserData.email,
+          pendingUserData.password,
+          pendingUserData.name,
+          pendingUserData.role
+        );
+        setNewUserForm({ name: '', email: '', role: 'Staff', password: '' });
+        setPendingUserData(null);
+        setAddUserConfirmOpen(false);
+        setActionSuccessMessage('User added successfully!');
+        setActionSuccessOpen(true);
+      } catch (err: any) {
+        setActionErrorMessage(err.message || 'Failed to add user');
+        setActionErrorOpen(true);
+      }
     }
   };
 
   const handleEditUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedUser) {
-      const form = e.target as HTMLFormElement;
-      const formData = new FormData(form);
-      setPendingUserEdit({
-        id: selectedUser.id,
-        updates: {
-          name: formData.get('name') as string,
-          email: formData.get('email') as string,
-          role: formData.get('role') as string,
-          status: formData.get('status') as string,
-        }
-      });
-      setEditUserOpen(false);
-      setEditUserConfirmOpen(true);
-    }
+    setPendingUserEdit({
+      uid: selectedUser?.id,
+      updates: {
+        name: editUserForm.name,
+        role: editUserForm.role,
+        status: editUserForm.status,
+      }
+    });
+    setEditUserOpen(false);
+    setEditUserConfirmOpen(true);
   };
 
-  const confirmEditUser = () => {
+  const confirmEditUser = async () => {
     if (pendingUserEdit) {
-      onUpdateUser(pendingUserEdit.id, pendingUserEdit.updates);
-      setPendingUserEdit(null);
-      setSelectedUser(null);
-      setEditUserConfirmOpen(false);
-      setActionSuccessMessage('User updated successfully!');
-      setActionSuccessOpen(true);
+      try {
+        await updateUserProfile(pendingUserEdit.uid, pendingUserEdit.updates);
+        setPendingUserEdit(null);
+        setSelectedUser(null);
+        setEditUserConfirmOpen(false);
+        setActionSuccessMessage('User updated successfully!');
+        setActionSuccessOpen(true);
+      } catch (err: any) {
+        setActionErrorMessage(err.message || 'Failed to update user');
+        setActionErrorOpen(true);
+      }
     }
   };
 
@@ -375,13 +437,18 @@ export function AdminDashboard({
     }
   };
 
-  const confirmDeleteUser = () => {
+  const confirmDeleteUser = async () => {
     if (selectedUser) {
-      onDeleteUser(selectedUser.id);
-      setDeleteUserConfirmOpen(false);
-      setSelectedUser(null);
-      setActionSuccessMessage('User deleted successfully!');
-      setActionSuccessOpen(true);
+      try {
+        await deleteUserProfile(selectedUser.id);
+        setDeleteUserConfirmOpen(false);
+        setSelectedUser(null);
+        setActionSuccessMessage('User deleted successfully!');
+        setActionSuccessOpen(true);
+      } catch (err: any) {
+        setActionErrorMessage(err.message || 'Failed to delete user');
+        setActionErrorOpen(true);
+      }
     }
   };
 
@@ -747,51 +814,87 @@ export function AdminDashboard({
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                 currentSection === 'dashboard' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
               }`}
+              title="View dashboard and statistics"
             >
               <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Dashboard</span>
             </button>
+            
             <button
-              onClick={() => handleSectionChange('responses')}
+              onClick={() => canViewResponses(user?.role || 'Enumerator') && handleSectionChange('responses')}
+              disabled={!canViewResponses(user?.role || 'Enumerator')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentSection === 'responses' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
+                !canViewResponses(user?.role || 'Enumerator') 
+                  ? 'opacity-50 cursor-not-allowed text-muted-foreground' 
+                  : currentSection === 'responses' 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'hover:bg-muted'
               }`}
+              title={canViewResponses(user?.role || 'Enumerator') ? 'View raw survey responses' : 'Requires permission'}
             >
               <Database className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Raw Responses</span>
             </button>
+            
             <button
-              onClick={() => handleSectionChange('reports')}
+              onClick={() => canViewResponses(user?.role || 'Enumerator') && handleSectionChange('reports')}
+              disabled={!canViewResponses(user?.role || 'Enumerator')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentSection === 'reports' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
+                !canViewResponses(user?.role || 'Enumerator') 
+                  ? 'opacity-50 cursor-not-allowed text-muted-foreground' 
+                  : currentSection === 'reports' 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'hover:bg-muted'
               }`}
+              title={canViewResponses(user?.role || 'Enumerator') ? 'View reports and analytics' : 'Requires permission'}
             >
               <FileBarChart className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Reports</span>
             </button>
+            
             <button
-              onClick={() => handleSectionChange('manage')}
+              onClick={() => canManageQuestions(user?.role || 'Enumerator') && handleSectionChange('manage')}
+              disabled={!canManageQuestions(user?.role || 'Enumerator')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentSection === 'manage' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
+                !canManageQuestions(user?.role || 'Enumerator') 
+                  ? 'opacity-50 cursor-not-allowed text-muted-foreground' 
+                  : currentSection === 'manage' 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'hover:bg-muted'
               }`}
+              title={canManageQuestions(user?.role || 'Enumerator') ? 'Manage survey questions' : 'Requires permission'}
             >
               <Edit2 className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Manage Questions</span>
             </button>
+            
             <button
-              onClick={() => handleSectionChange('settings')}
+              onClick={() => canConfigureSettings(user?.role || 'Enumerator') && handleSectionChange('settings')}
+              disabled={!canConfigureSettings(user?.role || 'Enumerator')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentSection === 'settings' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
+                !canConfigureSettings(user?.role || 'Enumerator') 
+                  ? 'opacity-50 cursor-not-allowed text-muted-foreground' 
+                  : currentSection === 'settings' 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'hover:bg-muted'
               }`}
+              title={canConfigureSettings(user?.role || 'Enumerator') ? 'Configure system settings' : 'Requires permission'}
             >
               <Settings className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Settings</span>
             </button>
+            
             <button
-              onClick={() => handleSectionChange('users')}
+              onClick={() => canManageUsers(user?.role || 'Enumerator') && handleSectionChange('users')}
+              disabled={!canManageUsers(user?.role || 'Enumerator')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentSection === 'users' ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted'
+                !canManageUsers(user?.role || 'Enumerator') 
+                  ? 'opacity-50 cursor-not-allowed text-muted-foreground' 
+                  : currentSection === 'users' 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'hover:bg-muted'
               }`}
+              title={canManageUsers(user?.role || 'Enumerator') ? 'Manage user accounts' : 'Requires permission'}
             >
               <UserCog className="w-5 h-5 flex-shrink-0" />
               <span className="truncate">Users</span>
@@ -867,12 +970,15 @@ export function AdminDashboard({
                     <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
                       <Users className="w-4 h-4 text-primary-foreground" />
                     </div>
-                    <span className="hidden md:inline">Admin</span>
+                    <span className="hidden md:inline truncate max-w-[100px]">{user?.name || 'Admin'}</span>
                     <ChevronDown className="w-4 h-4 hidden md:block" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                  <DropdownMenuLabel className="flex flex-col">
+                    <span>{user?.name || 'User'}</span>
+                    <span className="text-xs text-muted-foreground font-normal">{user?.email}</span>
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setChangePasswordOpen(true)}>
                     <Shield className="w-4 h-4 mr-2" />
@@ -1072,7 +1178,21 @@ export function AdminDashboard({
           )}
 
           {/* Raw Responses Section */}
-          {currentSection === 'responses' && (
+          {currentSection === 'responses' && !canViewResponses(user?.role || 'Enumerator') && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="shadow-md border-red-200 bg-red-50 max-w-md">
+                <CardContent className="pt-6 space-y-4 text-center">
+                  <Shield className="w-12 h-12 text-red-600 mx-auto" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-red-800">Access Denied</h2>
+                    <p className="text-sm text-red-700 mt-2">You don't have permission to view survey responses. Staff and Admin roles can access this section.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentSection === 'responses' && canViewResponses(user?.role || 'Enumerator') && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1129,7 +1249,21 @@ export function AdminDashboard({
           )}
 
           {/* Reports Section */}
-          {currentSection === 'reports' && (
+          {currentSection === 'reports' && !canViewResponses(user?.role || 'Enumerator') && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="shadow-md border-red-200 bg-red-50 max-w-md">
+                <CardContent className="pt-6 space-y-4 text-center">
+                  <Shield className="w-12 h-12 text-red-600 mx-auto" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-red-800">Access Denied</h2>
+                    <p className="text-sm text-red-700 mt-2">You don't have permission to view reports. Staff and Admin roles can access this section.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentSection === 'reports' && canViewResponses(user?.role || 'Enumerator') && (
             <div className="space-y-6">
               <div>
                 <h1 className="text-primary mb-2">Reports & Analytics</h1>
@@ -1171,7 +1305,21 @@ export function AdminDashboard({
           )}
 
           {/* Manage Questions Section */}
-          {currentSection === 'manage' && (
+          {currentSection === 'manage' && !canManageQuestions(user?.role || 'Enumerator') && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="shadow-md border-red-200 bg-red-50 max-w-md">
+                <CardContent className="pt-6 space-y-4 text-center">
+                  <Shield className="w-12 h-12 text-red-600 mx-auto" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-red-800">Access Denied</h2>
+                    <p className="text-sm text-red-700 mt-2">You don't have permission to manage questions. Only Admins can access this section.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentSection === 'manage' && canManageQuestions(user?.role || 'Enumerator') && (
             <div className="space-y-6">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
@@ -1266,7 +1414,21 @@ export function AdminDashboard({
           )}
 
           {/* Settings Section */}
-          {currentSection === 'settings' && (
+          {currentSection === 'settings' && !canConfigureSettings(user?.role || 'Enumerator') && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="shadow-md border-red-200 bg-red-50 max-w-md">
+                <CardContent className="pt-6 space-y-4 text-center">
+                  <Shield className="w-12 h-12 text-red-600 mx-auto" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-red-800">Access Denied</h2>
+                    <p className="text-sm text-red-700 mt-2">You don't have permission to configure system settings. Only Admins can access this section.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentSection === 'settings' && canConfigureSettings(user?.role || 'Enumerator') && (
             <div className="space-y-6">
               <div>
                 <h1 className="text-primary mb-2">System Settings</h1>
@@ -1386,7 +1548,21 @@ export function AdminDashboard({
           )}
 
           {/* Users Section */}
-          {currentSection === 'users' && (
+          {currentSection === 'users' && !canManageUsers(user?.role || 'Enumerator') && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="shadow-md border-red-200 bg-red-50 max-w-md">
+                <CardContent className="pt-6 space-y-4 text-center">
+                  <Shield className="w-12 h-12 text-red-600 mx-auto" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-red-800">Access Denied</h2>
+                    <p className="text-sm text-red-700 mt-2">You don't have permission to manage users. Only Admins can access this section.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentSection === 'users' && canManageUsers(user?.role || 'Enumerator') && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1398,6 +1574,26 @@ export function AdminDashboard({
                   Add User
                 </Button>
               </div>
+
+              {firebaseUsersError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
+                  <p className="text-sm text-red-800 font-medium">⚠️ Error Loading Users</p>
+                  <p className="text-sm text-red-700">{firebaseUsersError}</p>
+                  {firebaseUsersError?.includes('permission-denied') && (
+                    <div className="bg-red-100 border border-red-300 rounded p-3 mt-2 space-y-2">
+                      <p className="text-sm text-red-800 font-semibold">Quick Fix:</p>
+                      <ol className="text-xs text-red-700 list-decimal list-inside space-y-1">
+                        <li>Open Firebase Console: <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="underline font-semibold">console.firebase.google.com</a></li>
+                        <li>Select project: <strong>arta-a6d0f</strong></li>
+                        <li>Go to: <strong>Firestore Database → Rules</strong></li>
+                        <li>Replace rules with the content from <strong>QUICK_FIX_SECURITY_RULES.js</strong></li>
+                        <li>Click <strong>Publish</strong></li>
+                        <li>Refresh this page (F5)</li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <Card className="shadow-md border-border">
                 <CardContent className="p-0">
@@ -1412,30 +1608,44 @@ export function AdminDashboard({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell className="px-6 py-4">{user.name}</TableCell>
-                          <TableCell className="px-6 py-4">{user.email}</TableCell>
-                          <TableCell className="px-6 py-4">
-                            <Badge variant="outline">{user.role}</Badge>
-                          </TableCell>
-                          <TableCell className="px-6 py-4">
-                            <Badge className={user.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                              {user.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <Button variant="ghost" size="sm" onClick={() => { setSelectedUser(user); setEditUserOpen(true); }}>
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => { setSelectedUser(user); setDeleteUserOpen(true); }}>
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </div>
+                      {firebaseUsersLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="px-6 py-4 text-center text-muted-foreground">
+                            <Loader className="w-4 h-4 animate-spin mx-auto" />
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : firebaseUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="px-6 py-4 text-center text-muted-foreground">
+                            No users found. Click "Add User" to create one.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        firebaseUsers.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell className="px-6 py-4">{user.name}</TableCell>
+                            <TableCell className="px-6 py-4">{user.email}</TableCell>
+                            <TableCell className="px-6 py-4">
+                              <Badge variant="outline">{user.role}</Badge>
+                            </TableCell>
+                            <TableCell className="px-6 py-4">
+                              <Badge className={user.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                                {user.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => { setSelectedUser(user); setEditUserOpen(true); }}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => { setSelectedUser(user); setDeleteUserOpen(true); }}>
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -1758,15 +1968,21 @@ export function AdminDashboard({
             <form onSubmit={handleEditUser} className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-user-name">Full Name</Label>
-                <Input id="edit-user-name" name="name" defaultValue={selectedUser.name} required />
+                <Input 
+                  id="edit-user-name" 
+                  value={editUserForm.name} 
+                  onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                  required 
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-user-email">Email Address</Label>
-                <Input id="edit-user-email" name="email" type="email" defaultValue={selectedUser.email} required />
+                <Input id="edit-user-email" type="email" value={selectedUser.email} disabled className="bg-muted" />
+                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-user-role">Role</Label>
-                <Select name="role" defaultValue={selectedUser.role}>
+                <Select value={editUserForm.role} onValueChange={(value) => setEditUserForm({ ...editUserForm, role: value as any })}>
                   <SelectTrigger id="edit-user-role">
                     <SelectValue />
                   </SelectTrigger>
@@ -1779,7 +1995,7 @@ export function AdminDashboard({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-user-status">Status</Label>
-                <Select name="status" defaultValue={selectedUser.status}>
+                <Select value={editUserForm.status} onValueChange={(value) => setEditUserForm({ ...editUserForm, status: value as any })}>
                   <SelectTrigger id="edit-user-status">
                     <SelectValue />
                   </SelectTrigger>
