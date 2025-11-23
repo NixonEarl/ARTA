@@ -6,7 +6,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
-import { Download, Users, Award, FileText, Search, Bell, LogOut, Menu, X, LayoutDashboard, Database, FileBarChart, Settings, UserCog, Edit2, Trash2, Plus, Eye, Calendar, Filter, ChevronDown, Shield, TrendingUp, Activity, Clock, CheckCircle, AlertCircle, BarChart3, PieChart as PieChartIcon, LineChart as LineChartIcon, QrCode, HardDrive, Monitor, MonitorOff, Smartphone, XCircle, Frown, Meh, Smile, Star, MinusCircle, MessageSquare, FileCheck } from 'lucide-react';
+import { Download, Users, Award, FileText, Search, Bell, LogOut, Menu, X, LayoutDashboard, Database, FileBarChart, Settings, UserCog, Edit2, Trash2, Plus, Eye, Calendar, Filter, ChevronDown, Shield, TrendingUp, Activity, Clock, CheckCircle, AlertCircle, BarChart3, PieChart as PieChartIcon, LineChart as LineChartIcon, QrCode, HardDrive, Monitor, MonitorOff, Smartphone, XCircle, Frown, Meh, Smile, Star, MinusCircle, MessageSquare, FileCheck, Loader } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
@@ -17,6 +17,7 @@ import { SurveyQuestion, SurveyResponse, User } from '../App';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { DraggableQuestionItem } from './DraggableQuestionItem';
+import { useAuth } from '../context/AuthContext';
 
 interface AdminDashboardProps {
   responses: SurveyResponse[];
@@ -69,9 +70,10 @@ export function AdminDashboard({
   onReorderQuestions,
   onLogout
 }: AdminDashboardProps) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user, firebaseUser, loading: authLoading, error: authError, login, logout, resetPassword, clearError } = useAuth();
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [currentSection, setCurrentSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -247,20 +249,27 @@ export function AdminDashboard({
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginEmail && loginPassword) {
-      setIsLoggedIn(true);
+    setLoginError('');
+    try {
+      await login(loginEmail, loginPassword);
+      setLoginEmail('');
+      setLoginPassword('');
+    } catch (err) {
+      setLoginError(authError || 'Login failed');
     }
   };
 
-  const handleLogoutClick = () => {
-    setIsLoggedIn(false);
-    setLoginEmail('');
-    setLoginPassword('');
-    setCurrentSection('dashboard');
-    setSidebarOpen(false);
-    onLogout();
+  const handleLogoutClick = async () => {
+    try {
+      await logout();
+      setCurrentSection('dashboard');
+      setSidebarOpen(false);
+      onLogout();
+    } catch (err) {
+      setLoginError('Logout failed');
+    }
   };
 
   const handleExport = (type: string) => {
@@ -289,10 +298,15 @@ export function AdminDashboard({
     setActionSuccessOpen(true);
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Password reset sent to:', resetPasswordEmail);
-    setResetPasswordSuccess(true);
+    setLoginError('');
+    try {
+      await resetPassword(resetPasswordEmail);
+      setResetPasswordSuccess(true);
+    } catch (err) {
+      setLoginError('Failed to send reset email. Please check the email address.');
+    }
   };
 
   const handleResetPasswordClose = () => {
@@ -525,8 +539,24 @@ export function AdminDashboard({
     );
   }, [responses, searchQuery]);
 
+  // Show loading screen while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="flex justify-center">
+            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center shadow-lg animate-spin">
+              <Loader className="w-8 h-8 text-primary-foreground" />
+            </div>
+          </div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Login Screen
-  if (!isLoggedIn) {
+  if (!firebaseUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
         <Card className="max-w-md w-full shadow-[0_20px_60px_rgba(0,0,0,0.15)] border-2 border-border">
@@ -543,6 +573,11 @@ export function AdminDashboard({
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-6">
+              {loginError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{loginError}</p>
+                </div>
+              )}
               <div className="space-y-3">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
@@ -552,6 +587,7 @@ export function AdminDashboard({
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   required
+                  disabled={authLoading}
                   className="h-12"
                 />
               </div>
@@ -564,14 +600,37 @@ export function AdminDashboard({
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   required
+                  disabled={authLoading}
                   className="h-12"
                 />
               </div>
-              <Button type="submit" className="w-full h-12 bg-secondary hover:bg-secondary/90">
-                <LogOut className="w-4 h-4 mr-2 rotate-180" />
-                Login to Dashboard
+              <Button 
+                type="submit" 
+                className="w-full h-12 bg-secondary hover:bg-secondary/90"
+                disabled={authLoading}
+              >
+                {authLoading ? (
+                  <>
+                    <Loader className="w-4 h-4 mr-2 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2 rotate-180" />
+                    Login to Dashboard
+                  </>
+                )}
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setForgotPasswordOpen(true)}>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                className="w-full" 
+                onClick={() => {
+                  setForgotPasswordOpen(true);
+                  clearError();
+                }}
+                disabled={authLoading}
+              >
                 Forgot Password?
               </Button>
             </form>
@@ -592,6 +651,11 @@ export function AdminDashboard({
                     Enter your email address and we&apos;ll send you a link to reset your password.
                   </DialogDescription>
                 </DialogHeader>
+                {loginError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800">{loginError}</p>
+                  </div>
+                )}
                 <form onSubmit={handleForgotPassword} className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label htmlFor="reset-email">Email Address</Label>
@@ -602,15 +666,26 @@ export function AdminDashboard({
                       value={resetPasswordEmail}
                       onChange={(e) => setResetPasswordEmail(e.target.value)}
                       required
+                      disabled={authLoading}
                       className="h-12"
                     />
                   </div>
                   <div className="flex gap-3">
-                    <Button type="button" variant="outline" onClick={handleResetPasswordClose} className="flex-1">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={handleResetPasswordClose} 
+                      className="flex-1"
+                      disabled={authLoading}
+                    >
                       Cancel
                     </Button>
-                    <Button type="submit" className="flex-1 bg-secondary hover:bg-secondary/90">
-                      Send Reset Link
+                    <Button 
+                      type="submit" 
+                      className="flex-1 bg-secondary hover:bg-secondary/90"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? 'Sending...' : 'Send Reset Link'}
                     </Button>
                   </div>
                 </form>
