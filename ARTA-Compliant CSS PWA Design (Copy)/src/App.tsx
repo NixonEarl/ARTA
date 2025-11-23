@@ -4,7 +4,7 @@ import { SurveyForm } from './components/SurveyForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { KioskLandingScreen } from './components/KioskLandingScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { getFirestore, collection, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
 import './firebase';
 
 // Types
@@ -117,6 +117,61 @@ function AppContent() {
 
   // Survey Responses State
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
+  const [responsesLoading, setResponsesLoading] = useState(true);
+
+  // Load responses from Firebase on mount and listen for changes
+  useEffect(() => {
+    const db = getFirestore();
+    const responsesRef = collection(db, 'responses');
+    const q = query(responsesRef, orderBy('timestamp', 'desc'));
+    
+    // Subscribe to real-time updates
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      try {
+        const loadedResponses: SurveyResponse[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          loadedResponses.push({
+            id: loadedResponses.length + 1,
+            refId: data.refId || doc.id,
+            date: data.date || new Date().toISOString().split('T')[0],
+            clientType: data.clientType || '',
+            sex: data.sex || '',
+            age: data.age || '',
+            region: data.region || '',
+            service: data.service || '',
+            serviceOther: data.serviceOther || '',
+            cc1: data.cc1 || '',
+            cc2: data.cc2 || '',
+            cc3: data.cc3 || '',
+            sqd0: data.sqd0 || '',
+            sqd1: data.sqd1 || '',
+            sqd2: data.sqd2 || '',
+            sqd3: data.sqd3 || '',
+            sqd4: data.sqd4 || '',
+            sqd5: data.sqd5 || '',
+            sqd6: data.sqd6 || '',
+            sqd7: data.sqd7 || '',
+            sqd8: data.sqd8 || '',
+            sqdAvg: data.sqdAvg || 0,
+            suggestions: data.suggestions || '',
+            email: data.email || '',
+            timestamp: data.timestamp || Date.now()
+          });
+        });
+        setResponses(loadedResponses);
+        setResponsesLoading(false);
+      } catch (error) {
+        console.error('Error loading responses from Firebase:', error);
+        setResponsesLoading(false);
+      }
+    }, (error) => {
+      console.error('Error setting up responses listener:', error);
+      setResponsesLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Users State
   const [users, setUsers] = useState<User[]>([
@@ -215,13 +270,7 @@ function AppContent() {
         timestamp: Date.now(),
       });
       console.log("Document written with ID: ", docRef.id);
-      // Optionally, you can update the local state as well
-      const newResponse = {
-        ...response,
-        id: responses.length > 0 ? Math.max(...responses.map(r => r.id)) + 1 : 1,
-        timestamp: Date.now()
-      };
-      setResponses([newResponse, ...responses]);
+      // No need to update local state - the real-time listener will handle it
     } catch (e) {
       console.error("Error adding document: ", e);
     }
@@ -229,7 +278,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen">
-      {loading ? (
+      {loading || responsesLoading ? (
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
           <div className="text-center space-y-4">
             <div className="inline-block">
