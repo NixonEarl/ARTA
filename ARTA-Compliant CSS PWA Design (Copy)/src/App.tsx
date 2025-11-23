@@ -3,7 +3,8 @@ import { LandingPage } from './components/LandingPage';
 import { SurveyForm } from './components/SurveyForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { KioskLandingScreen } from './components/KioskLandingScreen';
-//test
+import './firebase';
+
 // Types
 export interface SurveyQuestion {
   id: string;
