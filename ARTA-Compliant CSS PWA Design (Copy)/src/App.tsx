@@ -4,6 +4,7 @@ import { SurveyForm } from './components/SurveyForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { KioskLandingScreen } from './components/KioskLandingScreen';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { getFirestore, collection, addDoc } from 'firebase/firestore';
 import './firebase';
 
 // Types
@@ -115,11 +116,7 @@ function AppContent() {
   ]);
 
   // Survey Responses State
-  const [responses, setResponses] = useState<SurveyResponse[]>([
-    { id: 1, refId: 'VZM-CSM-1759662846524-3555', date: '2025-10-05', service: 'Business Permit', sqdAvg: 4.8, clientType: 'Business', suggestions: 'Very efficient service!', email: 'test@example.com', sex: 'male', age: '35', region: 'ncr', serviceOther: '', cc1: '1', cc2: '1', cc3: '1', sqd0: '5', sqd1: '5', sqd2: '5', sqd3: '4', sqd4: '5', sqd5: '5', sqd6: '5', sqd7: '5', sqd8: '4', timestamp: 1759662846524 },
-    { id: 2, refId: 'VZM-CSM-1759662846524-3556', date: '2025-10-05', service: 'Civil Registry Services', sqdAvg: 4.5, clientType: 'Citizen', suggestions: 'Good but can improve waiting time', email: '', sex: 'female', age: '28', region: 'ncr', serviceOther: '', cc1: '2', cc2: '2', cc3: '2', sqd0: '5', sqd1: '4', sqd2: '5', sqd3: '4', sqd4: '4', sqd5: 'na', sqd6: '5', sqd7: '5', sqd8: '4', timestamp: 1759662846524 },
-    { id: 3, refId: 'VZM-CSM-1759662846524-3557', date: '2025-10-05', service: 'Building Permit', sqdAvg: 4.7, clientType: 'Business', suggestions: 'Staff very helpful', email: 'builder@test.com', sex: 'male', age: '42', region: 'region3', serviceOther: '', cc1: '1', cc2: '1', cc3: '1', sqd0: '5', sqd1: '5', sqd2: '5', sqd3: '4', sqd4: '5', sqd5: '4', sqd6: '5', sqd7: '5', sqd8: '5', timestamp: 1759662846524 },
-  ]);
+  const [responses, setResponses] = useState<SurveyResponse[]>([]);
 
   // Users State
   const [users, setUsers] = useState<User[]>([
@@ -210,13 +207,24 @@ function AppContent() {
     setQuestions(reorderedQuestions);
   };
 
-  const handleSubmitResponse = (response: Omit<SurveyResponse, 'id' | 'timestamp'>) => {
-    const newResponse = {
-      ...response,
-      id: responses.length > 0 ? Math.max(...responses.map(r => r.id)) + 1 : 1,
-      timestamp: Date.now()
-    };
-    setResponses([newResponse, ...responses]);
+  const handleSubmitResponse = async (response: Omit<SurveyResponse, 'id' | 'timestamp'>) => {
+    const db = getFirestore();
+    try {
+      const docRef = await addDoc(collection(db, "responses"), {
+        ...response,
+        timestamp: Date.now(),
+      });
+      console.log("Document written with ID: ", docRef.id);
+      // Optionally, you can update the local state as well
+      const newResponse = {
+        ...response,
+        id: responses.length > 0 ? Math.max(...responses.map(r => r.id)) + 1 : 1,
+        timestamp: Date.now()
+      };
+      setResponses([newResponse, ...responses]);
+    } catch (e) {
+      console.error("Error adding document: ", e);
+    }
   };
 
   return (
