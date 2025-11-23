@@ -3,7 +3,7 @@ import { LandingPage } from './components/LandingPage';
 import { SurveyForm } from './components/SurveyForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { KioskLandingScreen } from './components/KioskLandingScreen';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import './firebase';
 
 // Types
@@ -53,56 +53,11 @@ export interface User {
   status: string;
 }
 
-export default function App() {
+function AppContent() {
+  const { user, loading } = useAuth();
   const [view, setView] = useState<'landing' | 'survey' | 'admin'>('landing');
   const [kioskMode, setKioskMode] = useState(false);
-  
-  // Check for kiosk mode on mount
-  useEffect(() => {
-    const isKioskMode = localStorage.getItem('kioskMode') === 'true';
-    setKioskMode(isKioskMode);
-  }, []);
 
-  // Listen for kiosk mode changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const isKioskMode = localStorage.getItem('kioskMode') === 'true';
-      setKioskMode(isKioskMode);
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    // Also create a custom event for same-window updates
-    window.addEventListener('kioskModeChange', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('kioskModeChange', handleStorageChange);
-    };
-  }, []);
-
-  // Emergency keyboard shortcut to disable kiosk mode (Ctrl+Shift+K)
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // Ctrl+Shift+K to disable kiosk mode
-      if (e.ctrlKey && e.shiftKey && e.key === 'K') {
-        localStorage.removeItem('kioskMode');
-        setKioskMode(false);
-        window.dispatchEvent(new Event('kioskModeChange'));
-        console.log('🔓 Kiosk mode disabled via keyboard shortcut');
-        alert('Kiosk mode has been disabled!');
-      }
-      
-      // Ctrl+Shift+A to access admin (even in kiosk mode)
-      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
-        console.log('🔐 Admin access via keyboard shortcut');
-        setView('admin');
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, []);
-  
   // Survey Questions State
   const [questions, setQuestions] = useState<SurveyQuestion[]>([
     { id: 'sqd0', text: 'I am satisfied with the service that I availed.', type: 'Likert', required: true, category: 'SQD', order: 1 },
@@ -173,6 +128,58 @@ export default function App() {
     { id: 3, name: 'Enumerator', email: 'enumerator@valenzuela.gov.ph', role: 'Enumerator', status: 'Active' },
   ]);
 
+  // Check for kiosk mode on mount
+  useEffect(() => {
+    const isKioskMode = localStorage.getItem('kioskMode') === 'true';
+    setKioskMode(isKioskMode);
+  }, []);
+
+  // Listen for kiosk mode changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const isKioskMode = localStorage.getItem('kioskMode') === 'true';
+      setKioskMode(isKioskMode);
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('kioskModeChange', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('kioskModeChange', handleStorageChange);
+    };
+  }, []);
+
+  // Emergency keyboard shortcut to disable kiosk mode (Ctrl+Shift+K)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Ctrl+Shift+K to disable kiosk mode
+      if (e.ctrlKey && e.shiftKey && e.key === 'K') {
+        localStorage.removeItem('kioskMode');
+        setKioskMode(false);
+        window.dispatchEvent(new Event('kioskModeChange'));
+        console.log('🔓 Kiosk mode disabled via keyboard shortcut');
+        alert('Kiosk mode has been disabled!');
+      }
+      
+      // Ctrl+Shift+A to access admin (even in kiosk mode)
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        console.log('🔐 Admin access via keyboard shortcut');
+        setView('admin');
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+
+  // Redirect to admin if user is logged in and auth is done loading
+  useEffect(() => {
+    if (!loading && user) {
+      setView('admin');
+    }
+  }, [user, loading]);
+
   // Handlers for Admin Dashboard
   const handleAddQuestion = (question: SurveyQuestion) => {
     setQuestions([...questions, question]);
@@ -213,8 +220,18 @@ export default function App() {
   };
 
   return (
-    <AuthProvider>
-      <div className="min-h-screen">
+    <div className="min-h-screen">
+      {loading ? (
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
+          <div className="text-center space-y-4">
+            <div className="inline-block">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p className="text-muted-foreground">Loading your session...</p>
+          </div>
+        </div>
+      ) : (
+        <>
         {view === 'landing' && !kioskMode && (
           <LandingPage 
             onTakeSurvey={() => setView('survey')} 
@@ -251,7 +268,16 @@ export default function App() {
             onLogout={() => setView('landing')}
           />
         )}
+        </>
+      )}
       </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
     </AuthProvider>
   );
 }
