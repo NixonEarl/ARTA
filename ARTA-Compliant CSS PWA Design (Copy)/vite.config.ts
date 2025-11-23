@@ -53,6 +53,18 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom'],
+            'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage', 'firebase/functions'],
+            'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select', '@radix-ui/react-tabs'],
+            'chart-vendor': ['recharts'],
+            'form-vendor': ['react-hook-form', 'react-dnd', 'react-dnd-html5-backend'],
+          }
+        }
+      }
     },
     server: {
       port: 3000,
