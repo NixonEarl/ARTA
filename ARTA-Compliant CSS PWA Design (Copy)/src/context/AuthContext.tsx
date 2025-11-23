@@ -40,11 +40,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Listen for auth state changes
+  // Listen for auth state changes and restore session on page refresh
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUserData) => {
       try {
-        setLoading(true);
         if (firebaseUserData) {
           setFirebaseUser(firebaseUserData);
           
