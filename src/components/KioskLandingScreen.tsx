@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Award, ClipboardCheck, HandHelping, MonitorSmartphone, Hand, Sparkles, CheckCircle2 } from 'lucide-react';
 import valenzuelaLogo from 'figma:asset/3da91e378b5746d28e242948a192281543f29d21.png';
 import { ImageWithFallback } from './figma/ImageWithFallback';

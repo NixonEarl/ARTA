@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Shield, Lock, QrCode, CheckCircle, Menu, X, FileText, Smartphone, Award, TrendingUp, Clock, Scale } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { SurveyResponse } from '../App';
 import valenzuelaLogo from 'figma:asset/3da91e378b5746d28e242948a192281543f29d21.png';
 import { PrivacyPolicyDialog } from './PrivacyPolicyDialog';
